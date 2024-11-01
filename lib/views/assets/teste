@@ -1,0 +1,244 @@
+import 'package:flutter/material.dart';
+import 'package:content_repository/content_repository.dart';
+import 'package:tractians_mobile_challenge/views/assets/components/alert_filter.dart';
+import 'package:tractians_mobile_challenge/views/assets/components/energy_filter.dart';
+import 'package:tractians_mobile_challenge/views/assets/components/search_filter.dart';
+
+class AssetsView extends StatefulWidget {
+  final ContentRepository contentRepository;
+  final String companyId;
+  final String assetPng = "assets/images/asset.png";
+  final String locationPng = "assets/images/location.png";
+  final String componentPng = "assets/images/component.png";
+  final String sensor = "assets/images/";
+
+  const AssetsView({
+    required this.contentRepository,
+    required this.companyId,
+    super.key,
+  });
+
+  @override
+  AssetsViewState createState() => AssetsViewState();
+}
+
+class AssetsViewState extends State<AssetsView> {
+  bool showEnergyAssets = false;
+  bool showAlertAssets = false;
+  Map<String, bool> expandedLocations = {};
+  Map<String, bool> expandedAssets = {};
+
+  @override
+  Widget build(BuildContext context) {
+    List<Location> rootLocations = widget.contentRepository.contents
+        .firstWhere((content) => content.companyId == widget.companyId)
+        .rootLocations;
+
+    List<Asset> rootAssets = widget.contentRepository.contents
+        .firstWhere((content) => content.companyId == widget.companyId)
+        .rootAssets;
+
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        backgroundColor: Theme.of(context).colorScheme.onPrimary,
+        title: const Text("Assets"),
+      ),
+      body: ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              children: [
+                const SearchFilter(),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      EnergyFilter(
+                        onFilterChanged: (isPressed) {
+                          setState(() {
+                            showEnergyAssets = isPressed;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      AlertFilter(
+                        onFilterChanged: (isPressed) {
+                          setState(() {
+                            showAlertAssets = isPressed;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Display root locations and assets based on filters
+          if (!showEnergyAssets && !showAlertAssets)
+            ...rootLocations.map((location) => buildLocationTile(location)),
+            ...rootAssets.map((asset) => buildLocationTile(location)),
+          if (showEnergyAssets)
+            ...rootLocations.map((location) =>
+                buildLocationTileWithFilter(location, showEnergyAssets)),
+          if (showAlertAssets)
+            ...rootLocations.map((location) =>
+                buildLocationTileWithFilter(location, showAlertAssets)),
+        ],
+      ),
+    );
+  }
+
+  bool shouldDisplayAsset(Asset asset) {
+    if (showEnergyAssets && asset.sensorType != 'energy') {
+      return false;
+    }
+    if (showAlertAssets &&
+        asset.status != 'alert' &&
+        (asset.sensorType == 'energy' || asset.sensorType == 'vibration')) {
+      return false;
+    }
+    return true;
+  }
+
+  Widget buildLocationTileWithFilter(Location location, bool filterCondition) {
+    List<Location> subLocations = widget.contentRepository.contents
+        .firstWhere((content) => content.companyId == widget.companyId)
+        .getChildLocations(location.id);
+
+    List<Asset> locationAssets = widget.contentRepository.contents
+        .firstWhere((content) => content.companyId == widget.companyId)
+        .getAssetsInLocation(location.id);
+
+    bool shouldExpand = expandedLocations[location.id] ?? true;
+
+    bool hasVisibleAsset = locationAssets.any((asset) =>
+        shouldDisplayAsset(asset) &&
+        (showEnergyAssets || showAlertAssets));
+
+    if (!filterCondition || hasVisibleAsset) {
+      return Column(
+        children: [
+          ListTile(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Image.asset(widget.locationPng, scale: 1),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    location.name,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.inverseSurface),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            leading: Icon(
+              color: Theme.of(context).colorScheme.inverseSurface,
+              shouldExpand ? Icons.expand_less : Icons.expand_more,
+            ),
+            enabled: true,
+            onTap: () {
+              setState(() {
+                expandedLocations[location.id] = !shouldExpand;
+              });
+            },
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: shouldExpand
+                ? Column(
+                    children: [
+                      ...subLocations
+                          .map((loc) =>
+                              buildLocationTileWithFilter(loc, filterCondition)),
+                      ...locationAssets
+                          .map((asset) => buildAssetTile(asset)),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      );
+    } else {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget buildLocationTile(Location location) {
+    return buildLocationTileWithFilter(location, false);
+  }
+
+  Widget buildAssetTile(Asset asset) {
+    List<Asset> subAssets = widget.contentRepository.contents
+        .firstWhere((content) => content.companyId == widget.companyId)
+        .getChildAssets(asset.id);
+
+    String assetImage = (asset.sensorType != null || asset.sensorId != null) &&
+            asset.status != null
+        ? widget.componentPng
+        : widget.assetPng;
+
+    String sensor = ((asset.sensorType == "energy" ||
+                asset.sensorType == "vibration") &&
+            asset.status == "operating")
+        ? ("${widget.sensor}energy.png")
+        : ("${widget.sensor}alert.png");
+
+    if (!shouldDisplayAsset(asset)) {
+      return const SizedBox.shrink();
+    }
+
+    bool shouldExpand = expandedAssets[asset.id] ?? true;
+
+    return Column(
+      children: [
+        ListTile(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Image.asset(assetImage, scale: 1),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  asset.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.inverseSurface),
+                ),
+              ),
+              if (assetImage == widget.componentPng)
+                Image.asset(sensor, scale: 3),
+            ],
+          ),
+          leading: Icon(
+            color: Theme.of(context).colorScheme.inverseSurface,
+            shouldExpand ? Icons.expand_less : Icons.expand_more,
+          ),
+          enabled: true,
+          onTap: () {
+            setState(() {
+              expandedAssets[asset.id] = !shouldExpand;
+            });
+          },
+        ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: shouldExpand
+              ? Column(
+                  children: [
+                    ...subAssets.map((subAsset) => buildAssetTile(subAsset)),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+}
